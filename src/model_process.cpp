@@ -15,12 +15,10 @@ using namespace std;
 ModelProcess::ModelProcess() : loadFlag_(false), modelId_(0), modelWorkPtr_(nullptr), modelWorkSize_(0),
     modelWeightPtr_(nullptr),modelWeightSize_(0), modelDesc_(nullptr), input_(nullptr), output_(nullptr)
 {
-    INFO_LOG("ModelProcess cst");
 }
 
 ModelProcess::~ModelProcess()
 {
-    INFO_LOG("ModelProcess dst");
     UnloadModel();
     DestroyDesc();
     DestroyInput();

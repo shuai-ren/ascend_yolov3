@@ -62,7 +62,7 @@ namespace {
     const int kFrameEnQueueRetryTimes = 1000;
     const int kNoFlag = 0; // no flag
     const int kInvalidVideoIndex = -1; // invalid video index
-    const string kRtspTransport = "rtspTransport"; // rtsp transport
+    const string kRtspTransport = "rtsp_transport"; // rtsp transport
     const string kUdp = "udp"; // video format udp
     const string kTcp = "tcp";
     const string kBufferSize = "buffer_size"; // buffer size string
@@ -80,7 +80,6 @@ namespace {
     const int64_t kUsec = 1000000;
     const int kOutputJamWait = 10000;
     const int kInvalidTpye = -1;
-//    unsigned long long frame_count = 0;
     bool g_RunFlag = true;
 }
 
@@ -125,13 +124,7 @@ void* DecodeProcess::ThreadFunc(aclrtContext sharedContext)
 }
 
 Result DecodeProcess::FrameImageEnQueue(shared_ptr<PicDesc> frameData) {
-    if (frameImageQueue_.Size() > 10) {
-        INFO_LOG("QUE >>>>>>>>>>>>>>>>>>>>>> 10");
-        return SUCCESS;
-    }
     for (int count = 0; count < kFrameEnQueueRetryTimes; count++) {
-//        if (frameImageQueue_.Size() > 10)
-//            return SUCCESS;
         if (frameImageQueue_.Push(frameData))
             return SUCCESS;
         usleep(kDecodeQueueOpWait); 
@@ -142,17 +135,12 @@ Result DecodeProcess::FrameImageEnQueue(shared_ptr<PicDesc> frameData) {
     return FAILED;
 }
 
-
 void DecodeProcess::SleeptoNextFrameTime() {
-
     while(frameImageQueue_.Size() >  kReadSlow) {
-        INFO_LOG("frameImageQueue_.Size %d", frameImageQueue_.Size());
         if (isStop_) {
             return;
         }
-//        frameImageQueue_.Pop();
         usleep(kOutputJamWait);
-//        frameImageQueue_.Pop();
     }
 
     //get current time
@@ -176,8 +164,6 @@ void DecodeProcess::SleeptoNextFrameTime() {
     return;
 }
 
-
-
 Result DecodeProcess::FrameDecodeCallback(void* userData, void* frameData, int frameSize) {
     if ((frameData == NULL) || (frameSize == 0)) {
         ERROR_LOG("Frame data is null");
@@ -185,31 +171,13 @@ Result DecodeProcess::FrameDecodeCallback(void* userData, void* frameData, int f
     }
     DecodeProcess* videoDecoder = (DecodeProcess*)userData;
     void* inBufferDev_;
-//    static int count = 1;
 
     if (runMode_ == ACL_HOST){
-    // if (runMode_ == 3){
-        INFO_LOG("frameSizeframeSizeframeSizeframeSize____________________%d",frameSize);
-
+        INFO_LOG("[DecodeProcess::FrameDecodeCallback]");
         inBufferDev_ = Utils::CopyDataHostToDevice((void *)frameData, frameSize);
-        //  void* buffer = nullptr;
-        // aclError aclRet = acldvppMalloc(&buffer, dataSize);
-
-
-        // auto aclRet = aclrtMemcpy(inBufferDev_, frameSize, (void *)frameData, frameSize, ACL_MEMCPY_HOST_TO_DEVICE);
-        // if (aclRet != ACL_SUCCESS) {
-        //     ERROR_LOG("Copy data to device failed, aclRet is %d", aclRet);
-        //     return FAILED;
-        // }
-
     }
-        
-   
     else{
-        INFO_LOG("ACL_device____________________");
         inBufferDev_ = Utils::CopyDataDeviceToDevice((void *)frameData, frameSize);
-        // inBufferDev_ = Utils::CopyDataDeviceToLocal((void *)frameData, frameSize);
-        INFO_LOG("COPY DATA deviceTODEVICE SUCCESS____________________");
     }
 
     if (inBufferDev_ == nullptr) {
@@ -217,16 +185,10 @@ Result DecodeProcess::FrameDecodeCallback(void* userData, void* frameData, int f
         return FAILED;
     }
 
-
     size_t DataSize_ = (videoDecoder->frameWidth_ * videoDecoder->frameHeight_ * 3) / 2;
-    INFO_LOG("WIDTH-----%d, height--------%d", videoDecoder->frameWidth_, videoDecoder->frameHeight_);
     aclError ret = acldvppSetStreamDescData(videoDecoder->streamInputDesc_, inBufferDev_);
-//    INFO_LOG("FRAME_SIZESIZE:%d", frameSize);
-
     ret = acldvppSetStreamDescSize(videoDecoder->streamInputDesc_, frameSize);
-    INFO_LOG("FRAME_SIZESIZE:%d", frameSize);
     ret = acldvppMalloc(&(videoDecoder->picOutBufferDev_), DataSize_);
-    
     videoDecoder->picOutputDesc_ = acldvppCreatePicDesc();
     ret = acldvppSetPicDescWidth(videoDecoder->picOutputDesc_,videoDecoder->frameWidth_);
     ret = acldvppSetPicDescHeight(videoDecoder->picOutputDesc_, videoDecoder->frameHeight_);
@@ -234,62 +196,39 @@ Result DecodeProcess::FrameDecodeCallback(void* userData, void* frameData, int f
     ret = acldvppSetPicDescHeightStride(videoDecoder->picOutputDesc_, videoDecoder->frameHeight_);
     ret = acldvppSetPicDescData(videoDecoder->picOutputDesc_, videoDecoder->picOutBufferDev_);
     ret = acldvppSetPicDescSize(videoDecoder->picOutputDesc_, DataSize_);
-    ret = acldvppSetPicDescFormat(videoDecoder->picOutputDesc_, static_cast < acldvppPixelFormat > (videoDecoder->format_));
-    INFO_LOG("SENDFRAME************************");
-
+    ret = acldvppSetPicDescFormat(videoDecoder->picOutputDesc_, static_cast<acldvppPixelFormat>(videoDecoder->format_));
     ret = aclrtSetExceptionInfoCallback(dvpp_callback);
-    // ret = aclrtSetExceptionInfoCallback(this->dvpp_callback);
-    INFO_LOG("exception:::::%d", ret);
     ret = aclvdecSendFrame(videoDecoder->vdecChannelDesc_, videoDecoder->streamInputDesc_, videoDecoder->picOutputDesc_, nullptr, userData);
 
-    INFO_LOG("SENDFRAME END END END ************************%d", ret);
     if (ret != 0) {
         ret = acldvppFree(videoDecoder->picOutBufferDev_);
-        INFO_LOG("acldvppoutputFree ************************%d", ret);
     }
     usleep(kOutputJamWait);
     if (runMode_ == ACL_HOST){
-        INFO_LOG("host acldvppFree_%d", ret);
         ret = acldvppFree(inBufferDev_);
-        INFO_LOG("acldvppFree ************************%d", ret);
     }
-        
-   
     else{
-        INFO_LOG("ACL_device____________________");
         ret = acldvppFree(inBufferDev_);
-        INFO_LOG("acldvppFree ************************%d", ret);
     }
-    // delete[]inBufferDev_;
-    // ret = acldvppFree(inBufferDev_);
-    // delete[] inBufferDev_;
-    // void* inDvppBuffer = acldvppGetStreamDescData(videoDecoder->streamInputDesc_);
-    // ret = acldvppFree(inDvppBuffer);
-    // inBufferDev_ = nullptr;
-    // INFO_LOG("acldvppFree ************************%d", ret);
     return SUCCESS;
 }
 
 void DecodeProcess::callback(acldvppStreamDesc *input, acldvppPicDesc *output, void *userdata)
 {
-    INFO_LOG("USERDATA__________________");
     DecodeProcess* decoder = (DecodeProcess*)userdata;
-//    void *vdecOutBufferDev = acldvppGetPicDescData(output);
     int retCode = acldvppGetPicDescRetCode(output);                     //encode success or fail
-
     if (retCode == 0) {
         void *vdecOutBufferDev = acldvppGetPicDescData(output);
         uint32_t size = acldvppGetPicDescSize(output);
 
-        //  static int countt = 1;
         //Get decoded image parameters
-        shared_ptr < PicDesc > image = make_shared < PicDesc >();
+        shared_ptr<PicDesc> image = make_shared<PicDesc>();
         image->width = acldvppGetPicDescWidth(output);
         image->height = acldvppGetPicDescHeight(output);
         image->jpegDecodeSize = acldvppGetPicDescSize(output);
         image->data = SHARED_PTR_DVPP_BUF(vdecOutBufferDev);
         image->isLastFrame = false;
-        INFO_LOG("image->width, image->height%d,%d", image->width, image->height);
+
         if (YUV420SP_SIZE(image->width, image->height) != image->jpegDecodeSize) {
             ERROR_LOG("Invalid decoded frame parameter, "
             "width %d, height %d, size %d, buffer %p",
@@ -297,37 +236,16 @@ void DecodeProcess::callback(acldvppStreamDesc *input, acldvppPicDesc *output, v
             image->jpegDecodeSize, image->data.get());
         }
         else{
-            // if (countt % 2 == 0) {
-            //   INFO_LOG("COUNT COUNT COUNNNNNNNNNNNNNNNNNNNNNNNNT IS IS %d", countt);
             decoder->FrameImageEnQueue(image);
-            INFO_LOG("ENQUEUE SUCCESS");
         }
-        // countt++;
     }
     else {
         void *vdecOutBufferDev = acldvppGetPicDescData(output);
         ERROR_LOG("vdec decode frame failed, error code: %d",retCode);
         aclError ret0 = acldvppFree(vdecOutBufferDev);
         ERROR_LOG("release, error code: %d", ret0);
-
-
     }
-    /*
-        INFO_LOG("image->width, image->height%d,%d", image->width, image->height);
-        if (YUV420SP_SIZE(image->width, image->height) != image->jpegDecodeSize) {
-            ERROR_LOG("Invalid decoded frame parameter, "
-                            "width %d, height %d, size %d, buffer %p",
-                            image->width, image->height,
-                            image->jpegDecodeSize, image->data.get());
-        }
-        else{
-            if (count % 3 == 0) {
-                INFO_LOG("COUNT COUNT COUNNNNNNNNNNNNNNNNNNNNNNNNT IS IS %d", count);
-                decoder->FrameImageEnQueue(image);
-            }
-        }
-        aclError ret0 = acldvppFree(vdecOutBufferDev);   //neicuntiaoshi
-    */
+
     aclError ret = acldvppDestroyPicDesc(output);
 
     if (input != nullptr) {
@@ -337,7 +255,6 @@ void DecodeProcess::callback(acldvppStreamDesc *input, acldvppPicDesc *output, v
             aclError ret = acldvppFree(vdecInBufferDev);
         }
     }
-//    count++;
 }
 
 int DecodeProcess::GetVideoIndex(AVFormatContext* avFormatContext) {
@@ -366,24 +283,8 @@ void DecodeProcess::SetDictForRtsp(AVDictionary*& avdic) {
                 kReorderQueueSizeValue.c_str(), kNoFlag);
     av_dict_set(&avdic, kPktSize.c_str(), kPktSizeValue.c_str(), kNoFlag);
     //bandwidth
-    av_dict_set(&avdic, "MaxClients", "10", 0);
-    av_dict_set(&avdic, "MaxBandwidth", "100000", 0);
-
-
-    //new rtsp______________________________________________
-    av_dict_set(&avdic, "rtsp_transport", "tcp", 0); //设置tcp or udp，默认一般优先tcp再尝试udp
-//    av_dict_set(&avdic, "preset", "fast", 0); // av_opt_set(pCodecCtx->priv_data,"preset","fast",0);
-//    av_dict_set(&avdic, "tune", "zerolatency", 0);
-//    av_dict_set(&avdic, "scan_all_pmts", "1", AV_DICT_DONT_OVERWRITE);
-///
-//    av_dict_set(&avdic, "buffer_size", "1024000", 0);
-//    av_dict_set(&avdic, "max_delay", "500000", 0);
-//    av_dict_set(&avdic, "fflags", "nobuffer", 0);
-//    av_dict_set(&avdic, "probsize", "4096", 0);
-//    av_dict_set(&avdic, "packet-buffering", "0", 0);
-//    av_dict_set(&avdic, "fps", "30", 0);
-    //
-
+    // av_dict_set(&avdic, "MaxClients", "10", 0);
+    // av_dict_set(&avdic, "MaxBandwidth", "100000", 0);
     INFO_LOG("Set parameters for %s end", streamName_.c_str());
 }
 
@@ -443,15 +344,6 @@ void DecodeProcess::GetVideoInfo() {
         fps_ = inStream->avg_frame_rate.num / inStream->avg_frame_rate.den;
     }
 
-//    if (inStream->avg_frame_rate.den) {
-//        INFO_LOG("CHUCHUCHUCHUCHHHHHHHHHHHHHHHHHHHHHHHHHUC");
-//        fps_ = inStream->avg_frame_rate.num / inStream->avg_frame_rate.den;
-//    }
-//    else {
-//        INFO_LOG("kdefalut fps______________________________________________");
-//        fps_ = kDefaultFps;
-//    }
-
     videoType_ = inStream->codecpar->codec_id;
     profile_ = inStream->codecpar->profile;
     avformat_close_input(&avFormatContext);
@@ -469,7 +361,6 @@ void DecodeProcess::FFmpegDecoder(){
 int DecodeProcess::GetVdecType() {
     //VDEC only support　H265 main level，264 baseline level，main level，high level
     if (videoType_ == AV_CODEC_ID_HEVC) {
-        INFO_LOG("H265*********************");
         enType_ = 0;   //265视频
         streamFormat_ = H265_MAIN_LEVEL;         
     } else if (videoType_ == AV_CODEC_ID_H264) {
@@ -508,12 +399,9 @@ int DecodeProcess::GetVdecType() {
 void DecodeProcess::InitVideoStreamFilter(const AVBitStreamFilter*& videoFilter) {
     if (videoType_ == AV_CODEC_ID_H264) { // check video type is h264
         videoFilter = av_bsf_get_by_name("h264_mp4toannexb");
-        cout << "h264h264_mp4toannexb" << endl;
     }
     else { // the video type is h265
         videoFilter = av_bsf_get_by_name("hevc_mp4toannexb");
-        cout << "h265hevc_mp4toannexb" << endl;
-
     }
 }
 
@@ -565,6 +453,25 @@ Result DecodeProcess::SetAclContext() {
     return SUCCESS;   
 }
 
+// static int ReadTimeoutCallback(void *read_frame_st)
+// {
+//     //获取开始时间
+//     std::chrono::high_resolution_clock::time_point *start
+//         = (std::chrono::high_resolution_clock::time_point *)read_frame_st;
+//     //获取当前时间
+//     auto now = std::chrono::high_resolution_clock::now();
+//     //计算时间差 毫秒
+//     float elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - *start).count();
+//     //判断是否超时
+//     if (elapsed > 1000)
+//     {
+//         ERROR_LOG("Read frame timeout");
+//         return -1;
+//     }
+
+//     return 0;
+// }
+
 void DecodeProcess::Decode(void* callbackParam) {
     DecodeProcess* thisPtr =  (DecodeProcess*)callbackParam;
     INFO_LOG("Start ffmpeg decode video %s ...", thisPtr->streamName_.c_str());
@@ -578,6 +485,10 @@ void DecodeProcess::Decode(void* callbackParam) {
 
     avformat_network_init(); // init network
     AVFormatContext* avFormatContext = avformat_alloc_context();
+
+    // auto read_frame_st = std::chrono::high_resolution_clock::now();
+    // avFormatContext->interrupt_callback.callback = ReadTimeoutCallback;
+    // avFormatContext->interrupt_callback.opaque = &read_frame_st;
 
     // check open video result
     if (!thisPtr->OpenVideo(avFormatContext)) {
@@ -602,16 +513,47 @@ void DecodeProcess::Decode(void* callbackParam) {
     int processOk = true;
     int maxRetryCount = 3;  //最大重试次数
     int retryCount = 0;
-//    int first = true;
     // loop to get every frame from video stream
     while (true) {
-        //  && processOk && !thisPtr->isStop_
+        INFO_LOG("[DecodeProcess::Decode] while loop -> av_read_frame");
         auto rec_ret = av_read_frame(avFormatContext, &avPacket);
         if (rec_ret < 0)
         {
             std::cerr << "Error reading frame." << std::endl;
             if (retryCount < maxRetryCount)
             {
+
+                // av_bsf_free(&bsfCtx); // free AVBSFContext pointer
+                // avformat_close_input(&avFormatContext); // close input video
+
+                // avformat_network_init(); // init network
+                // AVFormatContext* avFormatContext = avformat_alloc_context();
+
+                // read_frame_st = std::chrono::high_resolution_clock::now();
+                // avFormatContext->interrupt_callback.callback = ReadTimeoutCallback;
+                // avFormatContext->interrupt_callback.opaque = &read_frame_st;
+
+                // // check open video result
+                // if (!thisPtr->OpenVideo(avFormatContext)) {
+                //     return;
+                // }
+
+                // int videoIndex = thisPtr->GetVideoIndex(avFormatContext);
+                // if (videoIndex == kInvalidVideoIndex) { // check video index is valid
+                //     ERROR_LOG("Rtsp %s index is -1", thisPtr->streamName_.c_str());
+                //     return;
+                // }
+
+                // AVBSFContext* bsfCtx = nullptr;
+                // // check initialize video parameters result
+                // if (!thisPtr->InitVideoParams(videoIndex, avFormatContext, bsfCtx)) {
+                //     return;
+                // }
+
+                // INFO_LOG("Start decode frame of video %s ...", thisPtr->streamName_.c_str());
+                
+
+
                 //重连
                 AVDictionary* avdic = nullptr;
                 av_log_set_level(AV_LOG_DEBUG);
@@ -654,27 +596,20 @@ void DecodeProcess::Decode(void* callbackParam) {
         retryCount = 0;
         if(processOk && !thisPtr->isStop_){
             if (avPacket.stream_index == videoIndex) { // check current stream is video
-
             // send video packet to ffmpeg
-
+            INFO_LOG("[DecodeProcess::Decode] while loop -> av_bsf_send_packet");
             if (av_bsf_send_packet(bsfCtx, &avPacket)) {
                 ERROR_LOG("Fail to call av_bsf_send_packet, channel id:%s",
                     thisPtr->streamName_.c_str());
             }
 
             // receive single frame from ffmpeg
-            INFO_LOG("start receive");
+            INFO_LOG("[DecodeProcess::Decode] while loop -> av_bsf_receive_packet");
             while ((av_bsf_receive_packet(bsfCtx, &avPacket) == 0) && !thisPtr->isStop_) {
-                INFO_LOG("readread000000000000000000 %d", avPacket.size);
-//                if (first == false && avPacket.size > 100000){
-//                    INFO_LOG("avPacket.size yichang");
-//                    continue;
-//                }
+                INFO_LOG("[DecodeProcess::Decode] while loop -> FrameDecodeCallback");
                 int ret = thisPtr->FrameDecodeCallback(callbackParam, avPacket.data, avPacket.size);
-                INFO_LOG("readread1111111111111111111111");
-//                first = false;
+                INFO_LOG("[DecodeProcess::Decode] while loop -> FrameDecodeCallback done, ret: %d", ret);
                 if (ret != 0) {
-                    printf("processOk false-----------------------------\n");
                     processOk = false;
                     break;
                 }
@@ -687,39 +622,7 @@ void DecodeProcess::Decode(void* callbackParam) {
             exit(0);
         }
 
-    /*
-        if (avPacket.stream_index == videoIndex) { // check current stream is video
-
-            // send video packet to ffmpeg
-
-            if (av_bsf_send_packet(bsfCtx, &avPacket)) {
-                ERROR_LOG("Fail to call av_bsf_send_packet, channel id:%s",
-                    thisPtr->streamName_.c_str());
-            }
-
-            // receive single frame from ffmpeg
-            INFO_LOG("start receive");
-            while ((av_bsf_receive_packet(bsfCtx, &avPacket) == 0) && !thisPtr->isStop_) {
-                INFO_LOG("readread000000000000000000 %d", avPacket.size);
-        //                if (first == false && avPacket.size > 100000){
-        //                    INFO_LOG("avPacket.size yichang");
-        //                    continue;
-        //                }
-                        int ret = thisPtr->FrameDecodeCallback(callbackParam, avPacket.data, avPacket.size);
-                        INFO_LOG("readread1111111111111111111111");
-        //                first = false;
-                if (ret != 0) {
-                    printf("processOk false-----------------------------");
-                    processOk = false;
-                    break;
-                }
-            }
-        }
-        av_packet_unref(&avPacket);
-        */
-
     }
-    INFO_LOG("av_bsf_free---------------");
     av_bsf_free(&bsfCtx); // free AVBSFContext pointer
     avformat_close_input(&avFormatContext); // close input video
 
@@ -740,7 +643,6 @@ Result DecodeProcess::VdecDecoder(){
     //Sets the callback function
     ret = aclvdecSetChannelDescCallback(vdecChannelDesc_, callback);
 	//The H265_MAIN_LEVEL video encoding protocol is used in the example
-    INFO_LOG("type is is is %d", static_cast<acldvppStreamFormat>(enType_));
     ret = aclvdecSetChannelDescEnType(vdecChannelDesc_, static_cast<acldvppStreamFormat>(enType_));
 	//PIXEL_FORMAT_YVU_SEMIPLANAR_420 
     ret = aclvdecSetChannelDescOutPicFormat(vdecChannelDesc_, static_cast<acldvppPixelFormat>(format_));
@@ -760,12 +662,6 @@ Result DecodeProcess::InitResource()
         }
     }
 
-//    Result ret = VdecDecoder();
-//    if (ret != SUCCESS) {
-//        ERROR_LOG("Vdec init resource failed");
-//    }
-//    INFO_LOG("Vdec init resource success");
-
     //intialize ffmpeg decoder
     FFmpegDecoder();
     //verify video type
@@ -781,7 +677,6 @@ Result DecodeProcess::InitResource()
 
     //Get video fps, if no fps, use 1 as default
     if (fps_ == 0) {
-        INFO_LOG("FPS_: %d", fps_);
         fps_ = kDefaultFps;
         ERROR_LOG("Video %s fps is 0, change to %d",
                        streamName_.c_str(), fps_);
@@ -789,6 +684,7 @@ Result DecodeProcess::InitResource()
     //Call the frame interval time(us)
     fpsInterval_ = kUsec / fps_;
     INFO_LOG("ffmped init resource success");
+
     decodeThread_ = thread(Decode, (void*)this);
     decodeThread_.detach();
     return SUCCESS;
@@ -806,10 +702,9 @@ Result DecodeProcess::ReadFrame(PicDesc& image){
     }
     image.width = frame->width;
     image.height = frame->height;
-    INFO_LOG("image_wwwwwwwwwwwwwwwwwwwwwwwwwwwhhhhhhhhhhhhhh %d %d", image.width, image.height);
+    INFO_LOG("[DecodeProcess::ReadFrame]");
     image.jpegDecodeSize = frame->jpegDecodeSize;
     image.data = frame->data;
-//    frame_count ++;
     return SUCCESS;
 }
 
@@ -819,8 +714,7 @@ shared_ptr<PicDesc> DecodeProcess::FrameImageOutQueue(bool noWait) {
     if (noWait || (image != nullptr)) return image;
 
     for (int count = 0; count < kQueueOpRetryTimes - 1; count++) {
-        INFO_LOG("out queue count %d", count);
-        INFO_LOG("SIZESIZESIZESIZESIZE**************** %d", frameImageQueue_.Size());
+        INFO_LOG("[DecodeProcess::FrameImageOutQueue] OutQueue retry %d times", count);
         usleep(kDecodeQueueOpWait);
         image = frameImageQueue_.Pop();
         if (image != nullptr)

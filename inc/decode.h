@@ -47,7 +47,6 @@ public:
     int GetFrameHeight() { return frameHeight_; }
     static void Decode(void* callbackParam);
     
-
 private:
     Result SetAclContext();
     Result FrameImageEnQueue(std::shared_ptr<PicDesc> frameData);

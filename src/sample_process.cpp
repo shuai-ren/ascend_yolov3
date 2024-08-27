@@ -116,33 +116,6 @@ int detectProcessByName(const char* processName) {
     return -3;
 }
 
-// int detectProcessByName(char * processName)
-// {
-//     FILE* fp = NULL;
-//     int count = 1;
-//     int BUFSZ = 100;
-//     char buf[BUFSZ];
-//     char command[150];
-
-//     if(snprintf(command,  150, "ps -C %s| grep %s", processName, processName) < 0)
-//         return -1;
-
-//     if((fp = popen(command, "r")) == NULL)
-//     {
-//         return -2;
-//     }
-    
-//     if((fgets(buf, BUFSZ, fp))!= NULL)
-//     {
-//         pclose(fp);
-//         fp = NULL;
-//         if(NULL != strstr(buf, processName)) 
-//             return 0;
-//     }
-//     std::cout << "detectprocess cmd: " << command << std::endl;
-//     return -3;
-// }
-
 SampleProcess::SampleProcess(int jpeg_port, int json_port, string streamName, float con, int32_t deviceId):
 deviceId_(0), 
 context_(nullptr), 
@@ -177,33 +150,29 @@ streamName_(streamName) {
     conf_ = con;
     deviceId_ = deviceId;
     std::cout << "conf: " << conf_ << " deviceId_: " << deviceId_ << std::endl;
-	command << "ffmpeg ";
+    command << "ffmpeg ";
 
-	// infile options
-	command << "-y "			   // overwrite output files
-			<< "-an "			   // force format to rawvideo
-			<< "-f rawvideo "	   // force format to rawvideo
-			<< "-vcodec rawvideo " // force video rawvideo ('copy' to copy stream)
-			<< "-pix_fmt bgr24 "   // set pixel format to bgr24
-			<< "-s "			   // set frame size (WxH or abbreviation)
-			<< to_string(drawImageInfo.output_w)
-			<< "x"
-			<< to_string(drawImageInfo.output_h)
-			<< " -r  " // set frame rate (Hz value, fraction or abbreviation)
-			<< "25";
-	command << " -i - "; //
+    // infile options
+    command << "-an "            // force format to rawvideo
+            << "-f rawvideo "        // force format to rawvideo
+            << "-pix_fmt bgr24 "   // set pixel format to bgr24
+            << "-s "            // set frame size (WxH or abbreviation)
+            << to_string(drawImageInfo.output_w)
+            << "x"
+            << to_string(drawImageInfo.output_h)
+            << " -r 25 "; // set frame rate (Hz value, fraction or abbreviation)
+    command << " -i - "; //
 
-	// outfile options
-	command << "-vcodec libx264 "	// Hyper fast Audio and Video encoder
-			<< " -pix_fmt yuv420p " // set pixel format to yuv420p
-			<< "-preset ultrafast " // set the libx264 encoding preset to ultrafast
+    // outfile options
+    command << "-c:v libx264 "    // Hyper fast Audio and Video encoder
+            << "-pix_fmt yuv420p " // set pixel format to yuv420p
+            << "-preset ultrafast " // set the libx264 encoding preset to ultrafast
             << "-tune zerolatency "
-            << "-threads 1 "
             << "-crf 30 "
-			<< "-f rtsp "			// force format to flv
-									//   << " -flvflags no_duration_filesize "
-			<< outpath;
-	fp = popen(command.str().c_str(), "w");
+            << "-f rtsp "            // force format to flv
+            << "-rtsp_transport tcp "
+            << outpath;
+    ffmpeg_pipe = popen(command.str().c_str(), "w");
     std::cout << "ffmpeg cmd: " << command.str().c_str() << std::endl;
 }
 
@@ -308,8 +277,8 @@ Result SampleProcess::Postprocess(std::string& send_info, const aclmdlDataset* m
 
         // uint32_t objIndex = (uint32_t)detectData[totalBox * LABEL + i];
         boundBox.text = yolov3Label[objIndex] + std::to_string(score) + "\%";
-        printf("%d %d %d %d %s\n", boundBox.rect.ltX, boundBox.rect.ltY,
-        boundBox.rect.rbX, boundBox.rect.rbY, boundBox.text.c_str());
+        // printf("%d %d %d %d %s\n", boundBox.rect.ltX, boundBox.rect.ltY,
+        // boundBox.rect.rbX, boundBox.rect.rbY, boundBox.text.c_str());
 
         auto cx = (((float)boundBox.rect.ltX + (float)boundBox.rect.rbX) / 2) / (float)(picDesc.width);
         auto cy = (((float)(boundBox.rect.ltY) + (float)(boundBox.rect.rbY)) / 2) / (float)(picDesc.height);
@@ -413,15 +382,12 @@ void SampleProcess::DrawBoundBoxToImage(vector<BBox>& detectionResults, PicDesc 
 
     }
     firstFlag = false;
-    printf("output_w:%d", output_w);
 
     try {
         // cv::resize(picDesc.origImage, picDesc.origImage, cv::Size(drawImageInfo.output_w, drawImageInfo.output_h));    
-        INFO_LOG("JPEG_SEND__________--");
         // jpg_sender_->write(picDesc.origImage);
         // cv::imwrite("1.jpg", picDesc.origImage);
-        fwrite(picDesc.origImage.data, sizeof(char), picDesc.origImage.total() * picDesc.origImage.elemSize(), fp);
-        std::cout << " MJPEG-stream sent. \n";
+        fwrite(picDesc.origImage.data, sizeof(char), picDesc.origImage.total() * picDesc.origImage.elemSize(), ffmpeg_pipe);
     }
     catch (...) {
         cerr << " Error in send_mjpeg() function \n";
@@ -478,8 +444,6 @@ Result SampleProcess::Process(int jpeg_port)
     void *imageInfoBuf_;
     if (runMode_ == ACL_HOST)
         imageInfoBuf_ = Utils::CopyDataHostToDevice((void *)imageInfo, imageInfoSize_);
-        // imageInfoBuf_ = Utils::CopyDataDeviceToDevice((void *)imageInfo, imageInfoSize_);
-
     else
         imageInfoBuf_ = Utils::CopyDataDeviceToDevice((void *)imageInfo, imageInfoSize_);
     if (imageInfoBuf_ == nullptr) {
@@ -495,26 +459,14 @@ Result SampleProcess::Process(int jpeg_port)
         return FAILED;
     }
 
-    // string outputVideoPath_ = "./test1.mp4";
-    // uint32_t videoWidth_ = decodeProcess.GetFrameWidth();
-    // uint32_t videoHeight_ = decodeProcess.GetFrameHeight();
-    // cout << "videoWidth_ and videoHeight_ is" << " " << videoWidth_ << " " << videoHeight_ << endl;
-    // outputVideo_.open(outputVideoPath_, cv::VideoWriter::fourcc('m', 'p', '4', 'v'), 25.0, cv::Size(videoWidth_,videoHeight_));
 
     PicDesc testPic;
     bool readflag = true;
-//    unsigned long long frame_count = 0;
     while(readflag){
-//        frame_count ++;
         ret = decodeProcess.ReadFrame(testPic);
-        INFO_LOG("read frame success---------------------");
         if (ret != SUCCESS) {
             break;
         }
-        //        if (frame_count % 2 == 0){
-        //            INFO_LOG("FRAME_COUNT:%d", frame_count);
-        //            continue;
-        //        }
 
         if (drawImageInfo.drawAreaFlag && !drawImageInfo.updateAreaFlag){
             float widthScale = (float)(drawImageInfo.output_w) / testPic.width;
@@ -573,10 +525,6 @@ Result SampleProcess::Process(int jpeg_port)
 
         const aclmdlDataset *modelOutput = modelProcess.GetModelOutputData();
 
-        // void *hostImage = Utils::CopyDataDeviceToLocal((void *)testPic.data.get(), YUV420SP_SIZE(testPic.width, testPic.height));
-        // cv::Mat yuvimg(testPic.height * 3 / 2, testPic.width, CV_8UC1, hostImage);
-        // cv::cvtColor(yuvimg, testPic.origImage, CV_YUV2BGR_NV12);
-
         // output dvpp
         ret = dvppProcessOutput.InitDvppOutputPara(drawImageInfo.output_w, drawImageInfo.output_h);
         if (ret != SUCCESS) {
@@ -611,8 +559,6 @@ Result SampleProcess::Process(int jpeg_port)
 
         try {
             json_sender_->write(send_info.c_str());
-            std::cout << send_info << endl;
-            std::cout << " JSON-stream sent. \n";
         }
         catch (...) {
             cerr << " Error in send_json() function \n";
@@ -620,7 +566,7 @@ Result SampleProcess::Process(int jpeg_port)
 
 
         delete[]((uint8_t*)hostImage);
-        INFO_LOG("delete success");
+
         }
     aclrtFree(imageInfoBuf_);
     // outputVideo_.release();
@@ -629,7 +575,7 @@ Result SampleProcess::Process(int jpeg_port)
 
 void SampleProcess::DestroyResource()
 {
-    pclose(fp);
+    pclose(ffmpeg_pipe);
     std::cout << "open ffmpeg cmd sucees: " << command.str().c_str() << std::endl;
     aclError ret;
     if (stream_ != nullptr) {

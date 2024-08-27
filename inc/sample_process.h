@@ -76,7 +76,7 @@ private:
     
     std::string streamName_;
     aclrtRunMode runMode_;
-	FILE *fp = nullptr;
+	FILE *ffmpeg_pipe = nullptr;
     float conf_;
     std::stringstream command;
 
