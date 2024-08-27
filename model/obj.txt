@@ -1,0 +1,10 @@
+NoCoal
+Coal
+Person
+Helmet
+Violation
+NoHelmet
+zhengchang
+Roller
+BigCoal
+Duimei

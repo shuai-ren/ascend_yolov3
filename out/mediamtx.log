@@ -1,0 +1,4 @@
+2024/01/23 00:12:08 INF MediaMTX v1.2.1
+2024/01/23 00:12:08 INF configuration loaded from /home/HwHiAiUser/samples/cplusplus/level2_simple_inference/2_object_detection/cdd6e53cfce3c468fa6053f2f8e0f2bae_BZG_konggang_1.0_202401171706/out/mediamtx.yml
+2024/01/23 00:12:08 ERR listen tcp :9001: bind: address already in use
+2024/01/23 00:12:08 INF waiting for running hooks
